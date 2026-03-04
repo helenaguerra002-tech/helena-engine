@@ -1,42 +1,41 @@
-from fastapi import FastAPI
+from datetime import date
+from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
+
 WATCHLISTS = {
+    "global": [
+        "NVDA",
+        "ASML",
+        "MSFT",
+        "LLY",
+        "COST",
+        "RYAAY",
+        "TDG",
+        "AZN",
+    ],
+    "emerging": [
+        "NU",
+        "VALE",
+        "PETR4.SA",
+        "SBSP3.SA",
+        "MELI",
+        "WEGE3.SA",
+    ],
+    "macro": [
+        "SPX",
+        "NDX",
+        "USO",
+        "US10Y",
+    ],
+}
 
-"global": [
-"NVDA",
-"ASML",
-"MSFT",
-"LLY",
-"COST",
-"RYAAY",
-"TDG",
-"AZN"
-],
-
-"emerging": [
-"NU",
-"VALE",
-"PETR4.SA",
-"SBSP3.SA",
-"MELI",
-"WEGE3.SA"
-],
-
-"macro": [
-"SPX",
-"NDX",
-"USO",
-"US10Y"
-]
+# Optional: allows you to request brazil_em but map it to emerging
 LIST_ALIASES = {
     "brazil_em": "emerging",
-    "brazil": "emerging",
-    "em": "emerging",
-    "br": "emerging",
-}
 }
 
 app = FastAPI(title="Helena Alpha Engine v1")
+
 
 @app.get("/", response_class=HTMLResponse)
 def root():
@@ -50,6 +49,7 @@ def root():
           code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
           .card { border: 1px solid #e6e6e6; border-radius: 12px; padding: 18px 20px; margin-top: 18px; }
           a { text-decoration: none; }
+          li { margin: 6px 0; }
         </style>
       </head>
       <body>
@@ -61,7 +61,17 @@ def root():
           <ul>
             <li><a href="/docs">/docs</a> — interactive API documentation</li>
             <li><a href="/health">/health</a> — health check</li>
+            <li><a href="/watchlist/brief?watchlist=global">/watchlist/brief?watchlist=global</a> — sample brief</li>
             <li><code>GET /</code> — this page</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>Watchlists</h3>
+          <ul>
+            <li><code>global</code></li>
+            <li><code>emerging</code> (alias: <code>brazil_em</code>)</li>
+            <li><code>macro</code></li>
           </ul>
         </div>
 
@@ -73,33 +83,34 @@ def root():
     </html>
     """
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "helena-alpha-engine"}
-from datetime import date
-from fastapi import Query
+
 
 @app.get("/watchlist/brief")
-def watchlist_brief(list: str = Query("global")):
-
-key = LIST_ALIASES.get(list, list)
-wl = WATCHLISTS.get(key)
+def watchlist_brief(watchlist: str = Query("global")):
+    key = LIST_ALIASES.get(watchlist, watchlist)
+    wl = WATCHLISTS.get(key)
 
     if wl is None:
         return {
-            "error": "invalid list",
-            "available_lists": list(WATCHLISTS.keys())
+            "error": "invalid watchlist",
+            "available_watchlists": list(WATCHLISTS.keys()),
+            "aliases": LIST_ALIASES,
         }
 
-    brief_lines = []
-    brief_lines.append(f"Helena Alpha Engine — {list.upper()} Brief ({date.today().isoformat()})")
-    brief_lines.append("")
-
-    for t in wl:
-        brief_lines.append(f"{t}")
+    brief_lines = [
+        f"Helena Alpha Engine — {key.upper()} Brief ({date.today().isoformat()})",
+        "",
+        *wl,
+    ]
 
     return {
         "date": date.today().isoformat(),
+        "watchlist_name": key,
         "watchlist": wl,
-        "brief": "\n".join(brief_lines)
+        "brief": "\n".join(brief_lines),
     }
+
