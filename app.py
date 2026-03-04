@@ -28,7 +28,12 @@ WATCHLISTS = {
 "USO",
 "US10Y"
 ]
-
+LIST_ALIASES = {
+    "brazil_em": "emerging",
+    "brazil": "emerging",
+    "em": "emerging",
+    "br": "emerging",
+}
 }
 
 app = FastAPI(title="Helena Alpha Engine v1")
@@ -77,7 +82,8 @@ from fastapi import Query
 @app.get("/watchlist/brief")
 def watchlist_brief(list: str = Query("global")):
 
-    wl = WATCHLISTS.get(list)
+key = LIST_ALIASES.get(list, list)
+wl = WATCHLISTS.get(key)
 
     if wl is None:
         return {
