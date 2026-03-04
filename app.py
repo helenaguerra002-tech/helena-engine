@@ -1,5 +1,35 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+WATCHLISTS = {
+
+"global": [
+"NVDA",
+"ASML",
+"MSFT",
+"LLY",
+"COST",
+"RYAAY",
+"TDG",
+"AZN"
+],
+
+"emerging": [
+"NU",
+"VALE",
+"PETR4.SA",
+"SBSP3.SA",
+"MELI",
+"WEGE3.SA"
+],
+
+"macro": [
+"SPX",
+"NDX",
+"USO",
+"US10Y"
+]
+
+}
 
 app = FastAPI(title="Helena Alpha Engine v1")
 
@@ -41,3 +71,29 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "helena-alpha-engine"}
+from datetime import date
+from fastapi import Query
+
+@app.get("/watchlist/brief")
+def watchlist_brief(list: str = Query("global")):
+
+    wl = WATCHLISTS.get(list)
+
+    if wl is None:
+        return {
+            "error": "invalid list",
+            "available_lists": list(WATCHLISTS.keys())
+        }
+
+    brief_lines = []
+    brief_lines.append(f"Helena Alpha Engine — {list.upper()} Brief ({date.today().isoformat()})")
+    brief_lines.append("")
+
+    for t in wl:
+        brief_lines.append(f"{t}")
+
+    return {
+        "date": date.today().isoformat(),
+        "watchlist": wl,
+        "brief": "\n".join(brief_lines)
+    }
