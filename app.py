@@ -291,7 +291,6 @@ Be direct and sharp. Write like an analyst at a top hedge fund, not a financial 
     async with anthropic_client.messages.stream(
         model="claude-opus-4-6",
         max_tokens=1024,
-        thinking={"type": "adaptive"},
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
         final = await stream.get_final_message()
