@@ -139,6 +139,16 @@ async def get_quote(symbol: str) -> dict:
         return r.json()
 
 
+async def get_metric(symbol: str) -> dict:
+    url = "https://finnhub.io/api/v1/stock/metric"
+    params = {"symbol": symbol, "metric": "all", "token": FINNHUB_API_KEY}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(url, params=params)
+        r.raise_for_status()
+        return r.json()
+
+
 async def get_news(symbol: str, days: int = 3) -> list[dict]:
     today = date.today()
     from_date = (today - timedelta(days=days)).isoformat()
@@ -164,18 +174,43 @@ async def _fetch_snapshot_items(wl: list[str]) -> list[dict]:
                     "last": None,
                     "prev_close": None,
                     "pct_change": None,
+                    "volume": None,
+                    "avg_volume_10d": None,
+                    "volume_spike": False,
                 }
             )
             continue
 
         last = quote.get("c")
         prev = quote.get("pc")
+        volume = quote.get("v")  # current day volume in shares
 
         pct_change = None
         if isinstance(last, (int, float)) and isinstance(prev, (int, float)) and prev != 0:
             pct_change = (last - prev) / prev * 100
 
-        items.append({"symbol": symbol, "last": last, "prev_close": prev, "pct_change": pct_change})
+        # Fetch average volume; Finnhub returns 10DayAverageTradingVolume in millions
+        avg_volume_10d = None
+        volume_spike = False
+        try:
+            metric = await get_metric(symbol)
+            avg_raw = metric.get("metric", {}).get("10DayAverageTradingVolume")
+            if isinstance(avg_raw, (int, float)) and avg_raw > 0:
+                avg_volume_10d = avg_raw * 1_000_000  # convert to shares
+                if isinstance(volume, (int, float)) and volume > 2 * avg_volume_10d:
+                    volume_spike = True
+        except Exception:
+            pass  # avg vol is best-effort; don't fail the whole snapshot
+
+        items.append({
+            "symbol": symbol,
+            "last": last,
+            "prev_close": prev,
+            "pct_change": pct_change,
+            "volume": volume,
+            "avg_volume_10d": avg_volume_10d,
+            "volume_spike": volume_spike,
+        })
     return items
 
 
@@ -261,7 +296,8 @@ async def watchlist_digest(watchlist: str = Query("global")):
     snapshot_lines = []
     for item in items:
         if item.get("pct_change") is not None:
-            snapshot_lines.append(f"  {item['symbol']}: ${item['last']:.2f} ({item['pct_change']:+.2f}%)")
+            spike_flag = " [VOLUME SPIKE]" if item.get("volume_spike") else ""
+            snapshot_lines.append(f"  {item['symbol']}: ${item['last']:.2f} ({item['pct_change']:+.2f}%){spike_flag}")
         else:
             snapshot_lines.append(f"  {item['symbol']}: data unavailable")
 
