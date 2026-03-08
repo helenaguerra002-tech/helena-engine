@@ -1,7 +1,8 @@
 from datetime import date, timedelta
 from fastapi import FastAPI, Query, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 import anthropic
+import openai
 import os
 import httpx
 
@@ -41,8 +42,10 @@ LIST_ALIASES = {
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+openai_client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 app = FastAPI(title="Helena Alpha Engine v1")
 
@@ -75,6 +78,7 @@ def root():
             <li><a href="/watchlist/brief?watchlist=global">/watchlist/brief?watchlist=global</a> — text brief</li>
             <li><a href="/watchlist/snapshot?watchlist=global">/watchlist/snapshot?watchlist=global</a> — live snapshot (needs FINNHUB_API_KEY)</li>
             <li><a href="/watchlist/digest?watchlist=global">/watchlist/digest?watchlist=global</a> — snapshot + news + AI narrative (needs both API keys)</li>
+            <li><a href="/watchlist/podcast?watchlist=global">/watchlist/podcast?watchlist=global</a> — digest as MP3 audio (needs all 3 API keys)</li>
             <li><code>GET /</code> — this page</li>
           </ul>
           <p class="muted">Tip: try <code>watchlist=macro</code> or <code>watchlist=brazil_em</code>.</p>
@@ -341,3 +345,102 @@ Be direct and sharp. Write like an analyst at a top hedge fund, not a financial 
         "narrative": narrative,
         "items": items,
     }
+
+
+@app.get("/watchlist/podcast")
+async def watchlist_podcast(watchlist: str = Query("global")):
+    """
+    Full digest pipeline → OpenAI TTS → returns MP3 audio of the investment briefing.
+    Requires FINNHUB_API_KEY, ANTHROPIC_API_KEY, and OPENAI_API_KEY.
+    """
+    if not FINNHUB_API_KEY:
+        raise HTTPException(status_code=500, detail="FINNHUB_API_KEY not configured")
+    if not anthropic_client:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not openai_client:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured — set it in Render environment variables")
+
+    key = LIST_ALIASES.get(watchlist, watchlist)
+    wl = WATCHLISTS.get(key)
+
+    if wl is None:
+        raise HTTPException(status_code=400, detail=f"Unknown watchlist '{watchlist}'. Available: {list(WATCHLISTS.keys())}")
+
+    # Reuse digest logic to get narrative
+    items = await _fetch_snapshot_items(wl)
+
+    top_movers = sorted(
+        [x for x in items if isinstance(x.get("pct_change"), (int, float))],
+        key=lambda x: abs(x["pct_change"]),
+        reverse=True,
+    )[:3]
+
+    news_by_symbol: dict[str, list[dict]] = {}
+    for mover in top_movers:
+        symbol = mover["symbol"]
+        try:
+            articles = await get_news(symbol)
+            news_by_symbol[symbol] = [
+                {"headline": a.get("headline", ""), "source": a.get("source", "")}
+                for a in articles[:4]
+                if a.get("headline")
+            ]
+        except Exception:
+            news_by_symbol[symbol] = []
+
+    snapshot_lines = []
+    for item in items:
+        if item.get("pct_change") is not None:
+            spike_flag = " — volume spike detected" if item.get("volume_spike") else ""
+            snapshot_lines.append(f"  {item['symbol']}: ${item['last']:.2f} ({item['pct_change']:+.2f}%){spike_flag}")
+        else:
+            snapshot_lines.append(f"  {item['symbol']}: data unavailable")
+
+    news_sections = []
+    for symbol, articles in news_by_symbol.items():
+        if articles:
+            headlines = "\n".join(f"    • {a['headline']}" for a in articles)
+            news_sections.append(f"  {symbol}:\n{headlines}")
+        else:
+            news_sections.append(f"  {symbol}: no recent news")
+
+    prompt = f"""You are Helena's AI market analyst. Today is {date.today().isoformat()}.
+
+{key.upper()} WATCHLIST SNAPSHOT:
+{chr(10).join(snapshot_lines)}
+
+RECENT NEWS FOR TOP MOVERS:
+{chr(10).join(news_sections) if news_sections else "No recent news available."}
+
+Write a concise 2-3 paragraph investment intelligence briefing. Cover:
+1. What is moving and why, based on the news context
+2. What macro or sector signal this suggests
+3. One specific hypothesis worth investigating further
+
+Be direct and sharp. Write like an analyst at a top hedge fund, not a financial advisor. No disclaimers."""
+
+    async with anthropic_client.messages.stream(
+        model="claude-opus-4-6",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    ) as stream:
+        final = await stream.get_final_message()
+
+    narrative = next((b.text for b in final.content if b.type == "text"), "")
+
+    # Convert narrative to speech
+    tts_input = f"Helena Alpha Engine — {key.upper()} briefing for {date.today().strftime('%B %d, %Y')}.\n\n{narrative}"
+
+    response = await openai_client.audio.speech.create(
+        model="tts-1",
+        voice="alloy",
+        input=tts_input,
+    )
+
+    audio_bytes = response.content
+
+    return StreamingResponse(
+        iter([audio_bytes]),
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f'attachment; filename="helena-{key}-{date.today().isoformat()}.mp3"'},
+    )
