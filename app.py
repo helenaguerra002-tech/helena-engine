@@ -612,8 +612,10 @@ Rules: Write in flowing paragraphs, not bullet points. Never use a finance term 
     except Exception:
         pass  # cover art is best-effort — audio still returns if DALL-E fails
 
-    # Convert narrative to speech
-    tts_input = f"Helena's Daily Market Briefing — {date.today().strftime('%B %d, %Y')}.\n\n{narrative}"
+    # Convert narrative to speech (OpenAI TTS limit: 4096 chars)
+    intro = f"Helena's Daily Market Briefing — {date.today().strftime('%B %d, %Y')}.\n\n"
+    max_narrative = 4096 - len(intro)
+    tts_input = intro + (narrative[:max_narrative] if len(narrative) > max_narrative else narrative)
     tts_response = await openai_client.audio.speech.create(
         model="tts-1",
         voice="alloy",
