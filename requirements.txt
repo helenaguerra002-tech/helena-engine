@@ -1,5 +1,6 @@
 anthropic==0.84.0
 openai>=1.30.0
+mutagen>=1.47.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.12.1

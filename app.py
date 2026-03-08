@@ -1,9 +1,12 @@
 from datetime import date, timedelta
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
+from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, ID3NoHeaderError
 import anthropic
 import openai
+import base64
 import os
+import tempfile
 import httpx
 
 WATCHLISTS = {
@@ -78,7 +81,8 @@ def root():
             <li><a href="/watchlist/brief?watchlist=global">/watchlist/brief?watchlist=global</a> — text brief</li>
             <li><a href="/watchlist/snapshot?watchlist=global">/watchlist/snapshot?watchlist=global</a> — live snapshot (needs FINNHUB_API_KEY)</li>
             <li><a href="/watchlist/digest?watchlist=global">/watchlist/digest?watchlist=global</a> — snapshot + news + AI narrative (needs both API keys)</li>
-            <li><a href="/watchlist/podcast?watchlist=global">/watchlist/podcast?watchlist=global</a> — digest as MP3 audio (needs all 3 API keys)</li>
+            <li><a href="/watchlist/podcast?watchlist=global">/watchlist/podcast?watchlist=global</a> — single watchlist as MP3 audio (needs all 3 API keys)</li>
+            <li><a href="/watchlist/podcast/daily">/watchlist/podcast/daily</a> — all 3 watchlists combined, with DALL-E cover art (needs all 3 API keys)</li>
             <li><code>GET /</code> — this page</li>
           </ul>
           <p class="muted">Tip: try <code>watchlist=macro</code> or <code>watchlist=brazil_em</code>.</p>
@@ -313,7 +317,7 @@ async def watchlist_digest(watchlist: str = Query("global")):
         else:
             news_sections.append(f"  {symbol}: no recent news")
 
-    prompt = f"""You are Helena's AI market analyst. Today is {date.today().isoformat()}.
+    prompt = f"""You are Helena's personal market teacher. Today is {date.today().isoformat()}.
 
 {key.upper()} WATCHLIST SNAPSHOT:
 {chr(10).join(snapshot_lines)}
@@ -321,12 +325,15 @@ async def watchlist_digest(watchlist: str = Query("global")):
 RECENT NEWS FOR TOP MOVERS:
 {chr(10).join(news_sections) if news_sections else "No recent news available."}
 
-Write a concise 2-3 paragraph investment intelligence briefing. Cover:
-1. What is moving and why, based on the news context
-2. What macro or sector signal this suggests
-3. One specific hypothesis worth investigating further
+Write a 3-paragraph briefing that genuinely teaches Helena what happened today. She is smart but has no finance background yet.
 
-Be direct and sharp. Write like an analyst at a top hedge fund, not a financial advisor. No disclaimers."""
+Paragraph 1: What moved and why — for each big mover, say in one sentence what the company actually does, then explain the price move using a real-world analogy (e.g. "think of it like a coffee shop that just announced their beans got cheaper — customers expect lower prices and more profit, so more people want to own a piece of the business"). Explain the cause clearly.
+
+Paragraph 2: What this could mean going forward — what are the possible consequences? Who else gets affected? Use concrete examples a non-expert would relate to (jobs, prices at the store, other companies in the same industry).
+
+Paragraph 3: One genuinely interesting question worth researching, explained in a way that makes her curious to learn more.
+
+Rules: Write in flowing paragraphs. Never use a finance term without immediately explaining it in plain words. Use analogies from everyday life — food, school, weather, sports, anything relatable. Be warm and enthusiastic, like a professor who loves this topic."""
 
     async with anthropic_client.messages.stream(
         model="claude-opus-4-6",
@@ -404,7 +411,7 @@ async def watchlist_podcast(watchlist: str = Query("global")):
         else:
             news_sections.append(f"  {symbol}: no recent news")
 
-    prompt = f"""You are Helena's AI market analyst. Today is {date.today().isoformat()}.
+    prompt = f"""You are Helena's personal market teacher. Today is {date.today().isoformat()}.
 
 {key.upper()} WATCHLIST SNAPSHOT:
 {chr(10).join(snapshot_lines)}
@@ -412,12 +419,15 @@ async def watchlist_podcast(watchlist: str = Query("global")):
 RECENT NEWS FOR TOP MOVERS:
 {chr(10).join(news_sections) if news_sections else "No recent news available."}
 
-Write a concise 2-3 paragraph investment intelligence briefing. Cover:
-1. What is moving and why, based on the news context
-2. What macro or sector signal this suggests
-3. One specific hypothesis worth investigating further
+Write a 3-paragraph briefing that genuinely teaches Helena what happened today. She is smart but has no finance background yet.
 
-Be direct and sharp. Write like an analyst at a top hedge fund, not a financial advisor. No disclaimers."""
+Paragraph 1: What moved and why — for each big mover, say in one sentence what the company actually does, then explain the price move using a real-world analogy (e.g. "think of it like a coffee shop that just announced their beans got cheaper — customers expect lower prices and more profit, so more people want to own a piece of the business"). Explain the cause clearly.
+
+Paragraph 2: What this could mean going forward — what are the possible consequences? Who else gets affected? Use concrete examples a non-expert would relate to (jobs, prices at the store, other companies in the same industry).
+
+Paragraph 3: One genuinely interesting question worth researching, explained in a way that makes her curious to learn more.
+
+Rules: Write in flowing paragraphs. Never use a finance term without immediately explaining it in plain words. Use analogies from everyday life — food, school, weather, sports, anything relatable. Be warm and enthusiastic, like a professor who loves this topic."""
 
     async with anthropic_client.messages.stream(
         model="claude-opus-4-6",
@@ -443,4 +453,183 @@ Be direct and sharp. Write like an analyst at a top hedge fund, not a financial 
         iter([audio_bytes]),
         media_type="audio/mpeg",
         headers={"Content-Disposition": f'attachment; filename="helena-{key}-{date.today().isoformat()}.mp3"'},
+    )
+
+
+def _embed_mp3_metadata(audio_bytes: bytes, title: str, image_bytes: bytes | None) -> bytes:
+    """Write ID3 tags (title, artist, album, cover art) into an MP3 and return the result."""
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+    try:
+        try:
+            tags = ID3(tmp_path)
+        except ID3NoHeaderError:
+            tags = ID3()
+        tags.add(TIT2(encoding=3, text=title))
+        tags.add(TPE1(encoding=3, text="Helena Alpha Engine"))
+        tags.add(TALB(encoding=3, text="Helena Daily Briefing"))
+        if image_bytes:
+            tags.add(APIC(encoding=3, mime="image/png", type=3, desc="Cover", data=image_bytes))
+        tags.save(tmp_path)
+        with open(tmp_path, "rb") as f:
+            return f.read()
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.get("/watchlist/podcast/daily")
+async def watchlist_podcast_daily():
+    """
+    Combined briefing across ALL 3 watchlists → one Claude narrative → DALL-E cover art → MP3.
+    Requires FINNHUB_API_KEY, ANTHROPIC_API_KEY, and OPENAI_API_KEY.
+    """
+    if not FINNHUB_API_KEY:
+        raise HTTPException(status_code=500, detail="FINNHUB_API_KEY not configured")
+    if not anthropic_client:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    if not openai_client:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured — set it in Render environment variables")
+
+    # Fetch all 3 watchlists
+    all_items: dict[str, list[dict]] = {}
+    all_top_movers: dict[str, list[dict]] = {}
+    for wl_name, tickers in WATCHLISTS.items():
+        items = await _fetch_snapshot_items(tickers)
+        all_items[wl_name] = items
+        all_top_movers[wl_name] = sorted(
+            [x for x in items if isinstance(x.get("pct_change"), (int, float))],
+            key=lambda x: abs(x["pct_change"]),
+            reverse=True,
+        )[:2]
+
+    # Fetch news for top movers across all watchlists
+    news_by_symbol: dict[str, list[dict]] = {}
+    for movers in all_top_movers.values():
+        for mover in movers:
+            symbol = mover["symbol"]
+            try:
+                articles = await get_news(symbol)
+                news_by_symbol[symbol] = [
+                    {"headline": a.get("headline", ""), "source": a.get("source", "")}
+                    for a in articles[:3]
+                    if a.get("headline")
+                ]
+            except Exception:
+                news_by_symbol[symbol] = []
+
+    # Build data sections for the prompt
+    wl_labels = {
+        "global": "GLOBAL STOCKS (major US and international companies)",
+        "emerging": "EMERGING MARKETS (companies from fast-growing economies, especially Brazil)",
+        "macro": "MACRO INDICATORS (funds that track the broader market — think of these as the economy's vital signs)",
+    }
+
+    data_sections = []
+    for wl_name, items in all_items.items():
+        snapshot_lines = []
+        for item in items:
+            if item.get("pct_change") is not None:
+                spike = " — unusually high trading activity today" if item.get("volume_spike") else ""
+                snapshot_lines.append(f"  {item['symbol']}: ${item['last']:.2f} ({item['pct_change']:+.2f}%){spike}")
+            else:
+                snapshot_lines.append(f"  {item['symbol']}: data unavailable")
+
+        news_lines = []
+        for mover in all_top_movers[wl_name]:
+            symbol = mover["symbol"]
+            articles = news_by_symbol.get(symbol, [])
+            if articles:
+                headlines = "\n".join(f"    • {a['headline']}" for a in articles)
+                news_lines.append(f"  {symbol} news:\n{headlines}")
+            else:
+                news_lines.append(f"  {symbol}: no recent news")
+
+        data_sections.append(
+            f"{wl_labels[wl_name]}:\n"
+            + "\n".join(snapshot_lines)
+            + "\n\nTop movers news:\n"
+            + "\n".join(news_lines)
+        )
+
+    prompt = f"""You are Helena's personal market teacher. Today is {date.today().isoformat()}.
+
+Here is today's market data across three groups of investments:
+
+---
+{(chr(10) + "---" + chr(10)).join(data_sections)}
+---
+
+Write a 5-paragraph daily briefing that genuinely teaches Helena about today's markets. She is smart but has no finance background yet.
+
+Paragraph 1 — Hook: Start with the single most interesting or surprising thing that happened today. Make her want to keep listening.
+
+Paragraph 2 — Global stocks: Explain the biggest movers. For each one, say what the company does in one simple sentence, then use a real-world analogy to explain why its price moved (e.g. "think of it like a bakery that just found a cheaper flour supplier — they'll make more money per loaf, so people want to invest in them").
+
+Paragraph 3 — Emerging markets and macro indicators: Explain what happened in Brazil/LatAm and in the broader market funds. Connect it to things people experience in daily life — currency changes, oil prices affecting gas at the pump, etc.
+
+Paragraph 4 — The big picture: Connect the dots across all three groups. What story do today's numbers tell together? What does this mean for regular people — jobs, prices, savings?
+
+Paragraph 5 — Curious question: End with one specific, genuinely fascinating question Helena should research. Explain why it matters in a way that makes her excited to learn more.
+
+Rules: Write in flowing paragraphs, not bullet points. Never use a finance term without immediately explaining it in plain words in the same sentence. Use analogies from everyday life — food, school, weather, sports, shopping. Be warm, curious, and enthusiastic. Make her feel like she is learning something real."""
+
+    async with anthropic_client.messages.stream(
+        model="claude-opus-4-6",
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+    ) as stream:
+        final = await stream.get_final_message()
+
+    narrative = next((b.text for b in final.content if b.type == "text"), "")
+
+    # Generate DALL-E cover art based on today's top movers
+    mover_themes = []
+    for wl_name, movers in all_top_movers.items():
+        for m in movers[:1]:
+            if isinstance(m.get("pct_change"), (int, float)):
+                direction = "climbing" if m["pct_change"] > 0 else "falling"
+                mover_themes.append(f"{m['symbol']} {direction}")
+
+    theme_desc = ", ".join(mover_themes) if mover_themes else "mixed market movements"
+    art_prompt = (
+        f"Abstract minimalist artwork for a daily financial podcast episode cover. "
+        f"Today's market theme: {theme_desc}. "
+        "Warm golden yellow and amber color palette, clean geometric shapes suggesting movement and flow, "
+        "no text, no numbers, no letters, no words, modern and elegant, square format."
+    )
+
+    image_bytes = None
+    try:
+        img_response = await openai_client.images.generate(
+            model="dall-e-3",
+            prompt=art_prompt,
+            size="1024x1024",
+            response_format="b64_json",
+            n=1,
+        )
+        image_bytes = base64.b64decode(img_response.data[0].b64_json)
+    except Exception:
+        pass  # cover art is best-effort — audio still returns if DALL-E fails
+
+    # Convert narrative to speech
+    tts_input = f"Helena's Daily Market Briefing — {date.today().strftime('%B %d, %Y')}.\n\n{narrative}"
+    tts_response = await openai_client.audio.speech.create(
+        model="tts-1",
+        voice="alloy",
+        input=tts_input,
+    )
+    audio_bytes = tts_response.content
+
+    # Embed cover art and metadata into the MP3
+    audio_bytes = _embed_mp3_metadata(
+        audio_bytes,
+        title=f"Helena Daily Briefing — {date.today().isoformat()}",
+        image_bytes=image_bytes,
+    )
+
+    return StreamingResponse(
+        iter([audio_bytes]),
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f'attachment; filename="helena-daily-{date.today().isoformat()}.mp3"'},
     )
