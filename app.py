@@ -46,6 +46,8 @@ LIST_ALIASES = {
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 openai_client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -478,11 +480,11 @@ def _embed_mp3_metadata(audio_bytes: bytes, title: str, image_bytes: bytes | Non
         os.unlink(tmp_path)
 
 
-@app.get("/watchlist/podcast/daily")
-async def watchlist_podcast_daily():
+async def _run_daily_podcast() -> tuple[bytes, str]:
     """
-    Combined briefing across ALL 3 watchlists → one Claude narrative → DALL-E cover art → MP3.
-    Requires FINNHUB_API_KEY, ANTHROPIC_API_KEY, and OPENAI_API_KEY.
+    Core generation logic: fetch data → Claude narrative → DALL-E art → MP3 bytes.
+    Returns (audio_bytes, episode_title).
+    Raises HTTPException if required API keys are missing.
     """
     if not FINNHUB_API_KEY:
         raise HTTPException(status_code=500, detail="FINNHUB_API_KEY not configured")
@@ -560,7 +562,7 @@ Here is today's market data across three groups of investments:
 {(chr(10) + "---" + chr(10)).join(data_sections)}
 ---
 
-Write a 5-paragraph daily briefing that genuinely teaches Helena about today's markets. She is smart but has no finance background yet.
+Write a 5-paragraph daily briefing that genuinely teaches Helena about today's markets. She is smart but has no finance background yet, but she is preparing for a career at a top hedge fund.
 
 Paragraph 1 — Hook: Start with the single most interesting or surprising thing that happened today. Make her want to keep listening.
 
@@ -568,11 +570,11 @@ Paragraph 2 — Global stocks: Explain the biggest movers. For each one, say wha
 
 Paragraph 3 — Emerging markets and macro indicators: Explain what happened in Brazil/LatAm and in the broader market funds. Connect it to things people experience in daily life — currency changes, oil prices affecting gas at the pump, etc.
 
-Paragraph 4 — The big picture: Connect the dots across all three groups. What story do today's numbers tell together? What does this mean for regular people — jobs, prices, savings?
+Paragraph 4 — The Analyst's Take: Connect the dots like a professional. Are markets risk-on (investors buying riskier assets like stocks) or risk-off (fleeing to safer assets like bonds)? Is there sector rotation — money moving from one industry to another? What macro force (interest rates, oil, currency, geopolitics) is the common thread today? Then give one specific observation a hedge fund analyst would make — for example, a cross-asset correlation (when one thing moves, something else tends to follow), a relative value signal (one asset looks cheap compared to another), or a positioning implication (what kind of trade this suggests). State the professional insight clearly, then explain it in plain language.
 
 Paragraph 5 — Curious question: End with one specific, genuinely fascinating question Helena should research. Explain why it matters in a way that makes her excited to learn more.
 
-Rules: Write in flowing paragraphs, not bullet points. Never use a finance term without immediately explaining it in plain words in the same sentence. Use analogies from everyday life — food, school, weather, sports, shopping. Be warm, curious, and enthusiastic. Make her feel like she is learning something real."""
+Rules: Write in flowing paragraphs, not bullet points. Never use a finance term without immediately explaining it in plain words in the same sentence. Use analogies from everyday life — food, school, weather, sports, shopping. Be warm, curious, and enthusiastic. Make her feel like she is learning something real. Do NOT open with 'Helena', 'Daily Market Briefing', or today's date — jump straight into your first content sentence. Keep your entire response to 600–700 words so it can be read aloud in 4–5 minutes."""
 
     async with anthropic_client.messages.stream(
         model="claude-opus-4-6",
@@ -615,7 +617,13 @@ Rules: Write in flowing paragraphs, not bullet points. Never use a finance term 
     # Convert narrative to speech (OpenAI TTS limit: 4096 chars)
     intro = f"Helena's Daily Market Briefing — {date.today().strftime('%B %d, %Y')}.\n\n"
     max_narrative = 4096 - len(intro)
-    tts_input = intro + (narrative[:max_narrative] if len(narrative) > max_narrative else narrative)
+    if len(narrative) > max_narrative:
+        truncated = narrative[:max_narrative]
+        last_end = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
+        narrative_for_tts = truncated[:last_end + 1] if last_end > 0 else truncated
+    else:
+        narrative_for_tts = narrative
+    tts_input = intro + narrative_for_tts
     tts_response = await openai_client.audio.speech.create(
         model="tts-1",
         voice="alloy",
@@ -624,14 +632,46 @@ Rules: Write in flowing paragraphs, not bullet points. Never use a finance term 
     audio_bytes = tts_response.content
 
     # Embed cover art and metadata into the MP3
-    audio_bytes = _embed_mp3_metadata(
-        audio_bytes,
-        title=f"Helena Daily Briefing — {date.today().isoformat()}",
-        image_bytes=image_bytes,
-    )
+    episode_title = f"Helena Daily Briefing — {date.today().isoformat()}"
+    audio_bytes = _embed_mp3_metadata(audio_bytes, title=episode_title, image_bytes=image_bytes)
 
+    return audio_bytes, episode_title
+
+
+async def _send_to_telegram(audio_bytes: bytes, title: str) -> bool:
+    """Send the daily podcast MP3 to Telegram. Returns True on success."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(
+            url,
+            data={"chat_id": TELEGRAM_CHAT_ID, "title": title, "performer": "Helena Alpha Engine"},
+            files={"audio": ("briefing.mp3", audio_bytes, "audio/mpeg")},
+        )
+    return r.status_code == 200
+
+
+@app.get("/watchlist/podcast/daily")
+async def watchlist_podcast_daily():
+    """
+    Combined briefing across ALL 3 watchlists → one Claude narrative → DALL-E cover art → MP3.
+    Requires FINNHUB_API_KEY, ANTHROPIC_API_KEY, and OPENAI_API_KEY.
+    """
+    audio_bytes, episode_title = await _run_daily_podcast()
     return StreamingResponse(
         iter([audio_bytes]),
         media_type="audio/mpeg",
         headers={"Content-Disposition": f'attachment; filename="helena-daily-{date.today().isoformat()}.mp3"'},
     )
+
+
+@app.post("/podcast/trigger-daily")
+async def podcast_trigger_daily():
+    """
+    Called by the daily scheduler — generates the podcast and pushes it to Telegram.
+    Requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars on Render.
+    """
+    audio_bytes, episode_title = await _run_daily_podcast()
+    telegram_ok = await _send_to_telegram(audio_bytes, episode_title)
+    return {"status": "ok", "title": episode_title, "telegram_sent": telegram_ok}
