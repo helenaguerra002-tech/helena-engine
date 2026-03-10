@@ -480,6 +480,25 @@ def _embed_mp3_metadata(audio_bytes: bytes, title: str, image_bytes: bytes | Non
         os.unlink(tmp_path)
 
 
+def _chunk_text_for_tts(text: str, max_chars: int = 4000) -> list[str]:
+    """Split text into chunks at sentence boundaries, each under max_chars."""
+    chunks = []
+    remaining = text.strip()
+    while remaining:
+        if len(remaining) <= max_chars:
+            chunks.append(remaining)
+            break
+        truncated = remaining[:max_chars]
+        last_end = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
+        if last_end > 0:
+            chunks.append(remaining[:last_end + 1].strip())
+            remaining = remaining[last_end + 1:].strip()
+        else:
+            chunks.append(truncated)
+            remaining = remaining[max_chars:].strip()
+    return [c for c in chunks if c]
+
+
 async def _run_daily_podcast() -> tuple[bytes, str]:
     """
     Core generation logic: fetch data → Claude narrative → DALL-E art → MP3 bytes.
@@ -554,31 +573,61 @@ async def _run_daily_podcast() -> tuple[bytes, str]:
             + "\n".join(news_lines)
         )
 
-    prompt = f"""You are Helena's personal market teacher. Today is {date.today().isoformat()}.
+    prompt = f"""You are the voice of Helena Alpha Engine, a daily market intelligence briefing. Today is {date.today().isoformat()}.
 
-Here is today's market data across three groups of investments:
+Here is today's market data:
 
 ---
 {(chr(10) + "---" + chr(10)).join(data_sections)}
 ---
 
-Write a 5-paragraph daily briefing that genuinely teaches Helena about today's markets. She is smart but has no finance background yet, but she is preparing for a career at a top hedge fund.
+Write a spoken daily briefing of approximately 1,800–2,000 words, structured as seven sections. This briefing is for Helena, a finance student preparing for a career at a top-tier hedge fund. She is analytically sharp and motivated. The briefing should be sophisticated enough that a professional could overhear it and find it credible, while still explaining reasoning clearly enough that Helena can follow and learn.
 
-Paragraph 1 — Hook: Start with the single most interesting or surprising thing that happened today. Make her want to keep listening.
+Do NOT open with "Helena", "Daily Market Briefing", or today's date. Begin the first sentence of Section 1 directly.
 
-Paragraph 2 — Global stocks: Explain the biggest movers. For each one, say what the company does in one simple sentence, then use a real-world analogy to explain why its price moved (e.g. "think of it like a bakery that just found a cheaper flour supplier — they'll make more money per loaf, so people want to invest in them").
+---
 
-Paragraph 3 — Emerging markets and macro indicators: Explain what happened in Brazil/LatAm and in the broader market funds. Connect it to things people experience in daily life — currency changes, oil prices affecting gas at the pump, etc.
+SECTION 1 — MACRO REGIME (~200 words)
+Open every briefing here. State the current macro regime clearly: where the 10-year Treasury yield is trading (use IEF price movement as your proxy — if IEF is up, yields are falling, and vice versa), whether volatility is elevated or subdued based on equity behaviour, and whether the dollar appears to be strengthening or weakening based on macro context and the moves you see in the data. State whether the overall tone is risk-on or risk-off and give one sentence explaining why. This is the weather report — set the context before anything else.
+Example register: "The 10-year is holding near [X]%, vol is subdued with the S&P grinding higher, and the dollar is softening slightly — that combination historically favours risk assets, particularly growth and tech."
 
-Paragraph 4 — The Analyst's Take: Connect the dots like a professional. Are markets risk-on (investors buying riskier assets like stocks) or risk-off (fleeing to safer assets like bonds)? Is there sector rotation — money moving from one industry to another? What macro force (interest rates, oil, currency, geopolitics) is the common thread today? Then give one specific observation a hedge fund analyst would make — for example, a cross-asset correlation (when one thing moves, something else tends to follow), a relative value signal (one asset looks cheap compared to another), or a positioning implication (what kind of trade this suggests). State the professional insight clearly, then explain it in plain language.
+SECTION 2 — LEAD STORY (~250 words)
+Identify the single most market-moving development in today's data. Lead with why it matters to positioning, not just what happened. Use one analogy here if helpful, but draw it from financial history, policy precedent, or industry dynamics — not consumer product comparisons. The analogy should hold up if a professional overheard it. Example register: comparing a central bank's action to the Fed's 2011 currency swap lines, or framing a sector move as similar to the 2013 taper tantrum rotation.
 
-Paragraph 5 — Curious question: End with one specific, genuinely fascinating question Helena should research. Explain why it matters in a way that makes her excited to learn more.
+SECTION 3 — GLOBAL EQUITIES ROUNDUP (~350 words)
+Cover 4–6 names across the global and emerging market watchlists. For each name: what it did, why, and what it signals about the broader sector or macro theme. Connect the move beyond the individual stock. If ASML is up, connect it to EUV demand, AI capex cycles, and what it implies for the semis complex. If a Brazilian name is moving, connect it to China's growth pipeline or commodity demand. Include percentage moves and price levels. Every move should teach something about how markets work.
 
-Rules: Write in flowing paragraphs, not bullet points. Never use a finance term without immediately explaining it in plain words in the same sentence. Use analogies from everyday life — food, school, weather, sports, shopping. Be warm, curious, and enthusiastic. Make her feel like she is learning something real. Do NOT open with 'Helena', 'Daily Market Briefing', or today's date — jump straight into your first content sentence. Keep your entire response to 600–700 words so it can be read aloud in 4–5 minutes."""
+SECTION 4 — MACRO DEEP DIVE (~350 words)
+Pick the single most important macro story visible in today's data — a commodity move, a rate signal from IEF or USO, a divergence between geographies — and go deeper than the headline. Cover: what the move implies about what's currently priced in, what data or event would change the picture, and how this interacts with equities or credit. Where relevant, mention positioning dynamics, term structure, or cross-asset correlations. This section earns credibility. Be specific and quantitative.
+
+SECTION 5 — CONNECTING THE DOTS (~250 words)
+Synthesise the session into 2–3 cross-asset themes. This section should feel like a coherent thesis, not a tour of markets. Use connective language: "the common thread here is...", "what the market is pricing is...", "the notable divergence is...". Identify any unusual relationships in today's data — oil falling while tech rises, bonds selling off while equities hold — and explain what they historically signal.
+
+SECTION 6 — THE ANALYST'S TAKE (~250 words)
+This is the most important section. Structure it as four parts:
+(a) Your directional thesis for the next session or week, stated plainly.
+(b) One supporting data point or historical parallel — include numbers.
+(c) What would specifically invalidate this view — be concrete, not vague.
+(d) One actionable implication: what a manager might do with this information.
+Tone: a senior analyst briefing a motivated junior colleague. Confident, specific, and honest about uncertainty. No vague hedges. No "it could go either way." State a view and defend it.
+
+SECTION 7 — WHAT TO WATCH (~150 words)
+Close with 2–3 specific catalysts in the next 24–48 hours that could confirm or break today's thesis. Name actual events: earnings releases, Fed speakers, scheduled data (CPI, PMI, jobs), geopolitical flashpoints. Tell Helena what to look for — not just that an event is happening, but what outcome would be bullish or bearish and why.
+
+---
+
+STYLE RULES:
+- Write in flowing spoken paragraphs. No bullet points, no headers in the output — this is read aloud.
+- Every finance term must be explained in plain language in the same sentence the first time it appears.
+- Analogies should come from financial history, policy precedent, or macro dynamics — not everyday consumer products.
+- Include real numbers throughout: index levels, percentage moves, yield levels, price changes.
+- Tone is confident, collegial, and direct — like a smart analyst talking to a motivated intern. Not a presenter performing for a general audience.
+- No filler phrases: no "let's unpack", "here's the surprising thing", "great question", or "fascinating". Get to the point in every section.
+- Do not use bullet points or numbered lists anywhere in the output."""
 
     async with anthropic_client.messages.stream(
         model="claude-opus-4-6",
-        max_tokens=2048,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
         final = await stream.get_final_message()
@@ -614,22 +663,19 @@ Rules: Write in flowing paragraphs, not bullet points. Never use a finance term 
     except Exception:
         pass  # cover art is best-effort — audio still returns if DALL-E fails
 
-    # Convert narrative to speech (OpenAI TTS limit: 4096 chars)
+    # Convert narrative to speech — chunked to handle OpenAI's 4096-char-per-request limit
     intro = f"Helena's Daily Market Briefing — {date.today().strftime('%B %d, %Y')}.\n\n"
-    max_narrative = 4096 - len(intro)
-    if len(narrative) > max_narrative:
-        truncated = narrative[:max_narrative]
-        last_end = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
-        narrative_for_tts = truncated[:last_end + 1] if last_end > 0 else truncated
-    else:
-        narrative_for_tts = narrative
-    tts_input = intro + narrative_for_tts
-    tts_response = await openai_client.audio.speech.create(
-        model="tts-1",
-        voice="alloy",
-        input=tts_input,
-    )
-    audio_bytes = tts_response.content
+    full_text = intro + narrative
+    tts_chunks = _chunk_text_for_tts(full_text)
+    audio_parts = []
+    for chunk in tts_chunks:
+        chunk_response = await openai_client.audio.speech.create(
+            model="tts-1",
+            voice="alloy",
+            input=chunk,
+        )
+        audio_parts.append(chunk_response.content)
+    audio_bytes = b"".join(audio_parts)
 
     # Embed cover art and metadata into the MP3
     episode_title = f"Helena Daily Briefing — {date.today().isoformat()}"
