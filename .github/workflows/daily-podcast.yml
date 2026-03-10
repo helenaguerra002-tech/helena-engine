@@ -1,0 +1,16 @@
+name: Daily Podcast
+
+on:
+  schedule:
+    - cron: '0 8 * * 1-5'  # 8 AM UTC (= 8 AM GMT winter / 9 AM BST summer), Mon-Fri
+  workflow_dispatch:         # allows manual trigger from GitHub UI
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily podcast
+        run: |
+          response=$(curl -s -X POST https://helena-alpha-engine.onrender.com/podcast/trigger-daily -m 600)
+          echo "$response"
+          echo "$response" | grep -q '"telegram_sent":true' && echo "SUCCESS: podcast sent to Telegram" || echo "WARNING: podcast generated but Telegram delivery failed"
