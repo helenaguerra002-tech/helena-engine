@@ -581,53 +581,60 @@ Here is today's market data:
 {(chr(10) + "---" + chr(10)).join(data_sections)}
 ---
 
-Write a spoken daily briefing of approximately 1,800–2,000 words, structured as seven sections. This briefing is for Helena, a finance student preparing for a career at a top-tier hedge fund. She is analytically sharp and motivated. The briefing should be sophisticated enough that a professional could overhear it and find it credible, while still explaining reasoning clearly enough that Helena can follow and learn.
+Write a spoken daily briefing of approximately 1,200 words — this should run exactly 10 minutes when read aloud at a natural pace. Structure it as seven sections. This briefing is for Helena, a finance student preparing for a career at a top-tier hedge fund. She is analytically sharp and motivated. The briefing should be sophisticated enough that a professional could overhear it and find it credible, while still explaining reasoning clearly enough that Helena can follow and learn.
 
 Do NOT open with "Helena", "Daily Market Briefing", or today's date. Begin the first sentence of Section 1 directly.
 
 ---
 
-SECTION 1 — MACRO REGIME (~200 words)
-Open every briefing here. State the current macro regime clearly: where the 10-year Treasury yield is trading (use IEF price movement as your proxy — if IEF is up, yields are falling, and vice versa), whether volatility is elevated or subdued based on equity behaviour, and whether the dollar appears to be strengthening or weakening based on macro context and the moves you see in the data. State whether the overall tone is risk-on or risk-off and give one sentence explaining why. This is the weather report — set the context before anything else.
-Example register: "The 10-year is holding near [X]%, vol is subdued with the S&P grinding higher, and the dollar is softening slightly — that combination historically favours risk assets, particularly growth and tech."
+SECTION 1 — MACRO REGIME (~120 words)
+Open every briefing here. State the current macro regime clearly: where the 10-year Treasury yield is trading (use IEF price movement as your proxy — if IEF is up, yields are falling, and vice versa), whether volatility is elevated or subdued based on equity behaviour, and whether the overall tone is risk-on (investors willing to buy stocks and other assets that could fall sharply) or risk-off (investors moving to safety). Give one sentence explaining why. End this section with one bridging sentence summarising the macro backdrop before moving on.
 
-SECTION 2 — LEAD STORY (~250 words)
-Identify the single most market-moving development in today's data. Lead with why it matters to positioning, not just what happened. Use one analogy here if helpful, but draw it from financial history, policy precedent, or industry dynamics — not consumer product comparisons. The analogy should hold up if a professional overheard it. Example register: comparing a central bank's action to the Fed's 2011 currency swap lines, or framing a sector move as similar to the 2013 taper tantrum rotation.
+SECTION 2 — LEAD STORY (~200 words)
+Identify the single most market-moving development in today's data. Lead with why it matters to positioning, not just what happened. Use one analogy if helpful, drawn from financial history or policy precedent — not consumer product comparisons. End with one sentence connecting this story to what comes next in the briefing.
 
-SECTION 3 — GLOBAL EQUITIES ROUNDUP (~350 words)
-Cover 4–6 names across the global and emerging market watchlists. For each name: what it did, why, and what it signals about the broader sector or macro theme. Connect the move beyond the individual stock. If ASML is up, connect it to EUV demand, AI capex cycles, and what it implies for the semis complex. If a Brazilian name is moving, connect it to China's growth pipeline or commodity demand. Include percentage moves and price levels. Every move should teach something about how markets work.
+SECTION 3 — GLOBAL EQUITIES ROUNDUP (~300 words)
+Cover 4–5 names across the watchlists. For each: what it did, why, and what it signals about the broader sector or theme. Include percentage moves. Connect every move beyond the individual stock — if ASML is up, tie it to AI capex cycles; if a Brazilian name moves, connect it to commodity demand or China. End with one sentence identifying the dominant theme across the names you covered.
 
-SECTION 4 — MACRO DEEP DIVE (~350 words)
-Pick the single most important macro story visible in today's data — a commodity move, a rate signal from IEF or USO, a divergence between geographies — and go deeper than the headline. Cover: what the move implies about what's currently priced in, what data or event would change the picture, and how this interacts with equities or credit. Where relevant, mention positioning dynamics, term structure, or cross-asset correlations. This section earns credibility. Be specific and quantitative.
+SECTION 4 — MACRO DEEP DIVE (~200 words)
+Pick the single most important macro story in today's data — a commodity move, a rate signal, a geographic divergence — and go one level deeper than the headline. Cover: what the move implies about what investors currently expect, and what would change that picture. End with one sentence on how this macro story connects back to equities.
 
-SECTION 5 — CONNECTING THE DOTS (~250 words)
-Synthesise the session into 2–3 cross-asset themes. This section should feel like a coherent thesis, not a tour of markets. Use connective language: "the common thread here is...", "what the market is pricing is...", "the notable divergence is...". Identify any unusual relationships in today's data — oil falling while tech rises, bonds selling off while equities hold — and explain what they historically signal.
+SECTION 5 — CONNECTING THE DOTS (~150 words)
+Synthesise into 2 cross-asset themes. Use connective language: "the common thread here is...", "what the market is telling us is...". Note any unusual divergences and what they historically signal. End with one sentence framing the overall market character of today's session.
 
-SECTION 6 — THE ANALYST'S TAKE (~250 words)
-This is the most important section. Structure it as four parts:
+SECTION 6 — THE ANALYST'S TAKE (~150 words)
+Structure as four parts:
 (a) Your directional thesis for the next session or week, stated plainly.
-(b) One supporting data point or historical parallel — include numbers.
-(c) What would specifically invalidate this view — be concrete, not vague.
-(d) One actionable implication: what a manager might do with this information.
-Tone: a senior analyst briefing a motivated junior colleague. Confident, specific, and honest about uncertainty. No vague hedges. No "it could go either way." State a view and defend it.
+(b) One supporting data point or historical parallel with numbers.
+(c) What would specifically invalidate this view.
+(d) One actionable implication.
+Tone: confident, specific, honest about uncertainty. State a view and defend it.
 
-SECTION 7 — WHAT TO WATCH (~150 words)
-Close with 2–3 specific catalysts in the next 24–48 hours that could confirm or break today's thesis. Name actual events: earnings releases, Fed speakers, scheduled data (CPI, PMI, jobs), geopolitical flashpoints. Tell Helena what to look for — not just that an event is happening, but what outcome would be bullish or bearish and why.
+SECTION 7 — WHAT TO WATCH (~80 words)
+Close with 2 specific catalysts in the next 24–48 hours. Name actual events. Say what outcome would be bullish (good for markets) or bearish (bad for markets) and why.
 
 ---
 
 STYLE RULES:
 - Write in flowing spoken paragraphs. No bullet points, no headers in the output — this is read aloud.
-- Every finance term must be explained in plain language in the same sentence the first time it appears.
-- Analogies should come from financial history, policy precedent, or macro dynamics — not everyday consumer products.
+- Every finance term must be explained in plain English the first time it appears, in the same sentence. Do NOT use these phrases without an immediate plain-English explanation:
+  "negative stock-bond correlation" → say "bonds rising as stocks fall — the classic safety trade"
+  "geopolitical risk premium" → say "the extra caution investors build into prices when political tensions rise"
+  "broad equity indices" → say "the major market benchmarks like the S&P 500"
+  "USO retraces" → say "oil gave back [X]% of its earlier gains"
+  "positioning squeeze" → say "investors who bet the wrong way getting forced to reverse their trades quickly"
+  "fundamental repricing" → say "the market reassessing what a company is actually worth"
+- Where it genuinely fits, use Peter Lynch's framing from One Up on Wall Street: does this company have a simple understandable story? Is this move consistent with a slow grower, stalwart, fast grower, cyclical, or turnaround? Can Helena spot this company in everyday life? Only apply this when it naturally fits — do not force it.
+- End each section with one bridging sentence summarising its key takeaway before moving on. Keep it brief and natural in spoken audio.
+- Analogies should come from financial history or policy precedent — not everyday consumer products.
 - Include real numbers throughout: index levels, percentage moves, yield levels, price changes.
-- Tone is confident, collegial, and direct — like a smart analyst talking to a motivated intern. Not a presenter performing for a general audience.
-- No filler phrases: no "let's unpack", "here's the surprising thing", "great question", or "fascinating". Get to the point in every section.
+- Tone is confident, collegial, and direct — like a smart analyst talking to a motivated intern.
+- No filler phrases: no "let's unpack", "here's the surprising thing", "great question", or "fascinating".
 - Do not use bullet points or numbered lists anywhere in the output."""
 
     async with anthropic_client.messages.stream(
         model="claude-opus-4-6",
-        max_tokens=4096,
+        max_tokens=3000,
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
         final = await stream.get_final_message()
