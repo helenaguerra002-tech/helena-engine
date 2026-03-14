@@ -43,6 +43,16 @@ LIST_ALIASES = {
     "brazil_em": "emerging",
 }
 
+TICKER_NAMES = {
+    "SPY": "S&P 500", "QQQ": "Nasdaq 100", "USO": "petróleo (USO)",
+    "IEF": "Títulos do Tesouro americano de 10 anos",
+    "NVDA": "Nvidia", "ASML": "ASML", "MSFT": "Microsoft",
+    "LLY": "Eli Lilly", "COST": "Costco", "RYAAY": "Ryanair",
+    "TDG": "TransDigm", "AZN": "AstraZeneca", "NU": "Nubank",
+    "VALE": "Vale", "PETR4.SA": "Petrobras", "SBSP3.SA": "Sabesp",
+    "MELI": "MercadoLibre", "WEGE3.SA": "WEG",
+}
+
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -444,8 +454,8 @@ Rules: Write in flowing paragraphs. Never use a finance term without immediately
     tts_input = f"Helena Alpha Engine — {key.upper()} briefing for {date.today().strftime('%B %d, %Y')}.\n\n{narrative}"
 
     response = await openai_client.audio.speech.create(
-        model="tts-1",
-        voice="alloy",
+        model="tts-1-hd",
+        voice="nova",
         input=tts_input,
     )
 
@@ -551,10 +561,12 @@ async def _run_daily_podcast() -> tuple[bytes, str]:
         snapshot_lines = []
         for item in items:
             if item.get("pct_change") is not None:
-                spike = " — unusually high trading activity today" if item.get("volume_spike") else ""
-                snapshot_lines.append(f"  {item['symbol']}: ${item['last']:.2f} ({item['pct_change']:+.2f}%){spike}")
+                spike = " — atividade de negociação incomum hoje" if item.get("volume_spike") else ""
+                name = TICKER_NAMES.get(item['symbol'], item['symbol'])
+                snapshot_lines.append(f"  {name} ({item['symbol']}): ${item['last']:.2f} ({item['pct_change']:+.2f}%){spike}")
             else:
-                snapshot_lines.append(f"  {item['symbol']}: data unavailable")
+                name = TICKER_NAMES.get(item['symbol'], item['symbol'])
+                snapshot_lines.append(f"  {name} ({item['symbol']}): dados indisponíveis")
 
         news_lines = []
         for mover in all_top_movers[wl_name]:
@@ -573,64 +585,66 @@ async def _run_daily_podcast() -> tuple[bytes, str]:
             + "\n".join(news_lines)
         )
 
-    prompt = f"""You are the voice of Helena Alpha Engine, a daily market intelligence briefing. Today is {date.today().isoformat()}.
+    prompt = f"""Você é a voz do Helena Alpha Engine, um boletim diário de inteligência de mercado. Hoje é {date.today().strftime('%d de %B de %Y')}.
 
-Here is today's market data:
+Escreva o boletim inteiramente em português do Brasil (pt-BR), no estilo de um apresentador de radiojornalismo financeiro — claro, direto e profissional, como a CBN ou a Rádio Jovem Pan News.
+
+Aqui estão os dados de mercado de hoje:
 
 ---
 {(chr(10) + "---" + chr(10)).join(data_sections)}
 ---
 
-Write a spoken daily briefing of approximately 1,200 words — this should run exactly 10 minutes when read aloud at a natural pace. Structure it as seven sections. This briefing is for Helena, a finance student preparing for a career at a top-tier hedge fund. She is analytically sharp and motivated. The briefing should be sophisticated enough that a professional could overhear it and find it credible, while still explaining reasoning clearly enough that Helena can follow and learn.
+Escreva um boletim falado de aproximadamente 1.200 palavras — deve durar exatamente 10 minutos quando lido em voz alta em ritmo natural. Estruture em sete seções. O boletim é para Helena, uma estudante de finanças se preparando para uma carreira em um fundo de hedge de primeira linha. Ela é analítica e motivada. O boletim deve ser sofisticado o suficiente para que um profissional possa ouvi-lo e considerá-lo crível, mas explicado de forma clara o suficiente para que Helena consiga acompanhar e aprender.
 
-Do NOT open with "Helena", "Daily Market Briefing", or today's date. Begin the first sentence of Section 1 directly.
-
----
-
-SECTION 1 — MACRO REGIME (~120 words)
-Open every briefing here. State the current macro regime clearly: where the 10-year Treasury yield is trading (use IEF price movement as your proxy — if IEF is up, yields are falling, and vice versa), whether volatility is elevated or subdued based on equity behaviour, and whether the overall tone is risk-on (investors willing to buy stocks and other assets that could fall sharply) or risk-off (investors moving to safety). Give one sentence explaining why. End this section with one bridging sentence summarising the macro backdrop before moving on.
-
-SECTION 2 — LEAD STORY (~200 words)
-Identify the single most market-moving development in today's data. Lead with why it matters to positioning, not just what happened. Use one analogy if helpful, drawn from financial history or policy precedent — not consumer product comparisons. End with one sentence connecting this story to what comes next in the briefing.
-
-SECTION 3 — GLOBAL EQUITIES ROUNDUP (~300 words)
-Cover 4–5 names across the watchlists. For each: what it did, why, and what it signals about the broader sector or theme. Include percentage moves. Connect every move beyond the individual stock — if ASML is up, tie it to AI capex cycles; if a Brazilian name moves, connect it to commodity demand or China. End with one sentence identifying the dominant theme across the names you covered.
-
-SECTION 4 — MACRO DEEP DIVE (~200 words)
-Pick the single most important macro story in today's data — a commodity move, a rate signal, a geographic divergence — and go one level deeper than the headline. Cover: what the move implies about what investors currently expect, and what would change that picture. End with one sentence on how this macro story connects back to equities.
-
-SECTION 5 — CONNECTING THE DOTS (~150 words)
-Synthesise into 2 cross-asset themes. Use connective language: "the common thread here is...", "what the market is telling us is...". Note any unusual divergences and what they historically signal. End with one sentence framing the overall market character of today's session.
-
-SECTION 6 — THE ANALYST'S TAKE (~150 words)
-Structure as four parts:
-(a) Your directional thesis for the next session or week, stated plainly.
-(b) One supporting data point or historical parallel with numbers.
-(c) What would specifically invalidate this view.
-(d) One actionable implication.
-Tone: confident, specific, honest about uncertainty. State a view and defend it.
-
-SECTION 7 — WHAT TO WATCH (~80 words)
-Close with 2 specific catalysts in the next 24–48 hours. Name actual events. Say what outcome would be bullish (good for markets) or bearish (bad for markets) and why.
+Não comece com "Helena", "Boletim Diário" ou a data de hoje. Comece a primeira frase da Seção 1 diretamente.
 
 ---
 
-STYLE RULES:
-- Write in flowing spoken paragraphs. No bullet points, no headers in the output — this is read aloud.
-- Every finance term must be explained in plain English the first time it appears, in the same sentence. Do NOT use these phrases without an immediate plain-English explanation:
-  "negative stock-bond correlation" → say "bonds rising as stocks fall — the classic safety trade"
-  "geopolitical risk premium" → say "the extra caution investors build into prices when political tensions rise"
-  "broad equity indices" → say "the major market benchmarks like the S&P 500"
-  "USO retraces" → say "oil gave back [X]% of its earlier gains"
-  "positioning squeeze" → say "investors who bet the wrong way getting forced to reverse their trades quickly"
-  "fundamental repricing" → say "the market reassessing what a company is actually worth"
-- Where it genuinely fits, use Peter Lynch's framing from One Up on Wall Street: does this company have a simple understandable story? Is this move consistent with a slow grower, stalwart, fast grower, cyclical, or turnaround? Can Helena spot this company in everyday life? Only apply this when it naturally fits — do not force it.
-- End each section with one bridging sentence summarising its key takeaway before moving on. Keep it brief and natural in spoken audio.
-- Analogies should come from financial history or policy precedent — not everyday consumer products.
-- Include real numbers throughout: index levels, percentage moves, yield levels, price changes.
-- Tone is confident, collegial, and direct — like a smart analyst talking to a motivated intern.
-- No filler phrases: no "let's unpack", "here's the surprising thing", "great question", or "fascinating".
-- Do not use bullet points or numbered lists anywhere in the output."""
+SEÇÃO 1 — CENÁRIO MACRO (~120 palavras)
+Comece sempre aqui. Descreva o cenário macro atual: onde o juro do Tesouro americano de 10 anos está operando (use o movimento do preço do IEF como proxy — se o IEF subiu, os juros caíram, e vice-versa), se a volatilidade está elevada ou contida com base no comportamento das ações, e se o tom geral é de apetite ao risco (investidores dispostos a comprar ações e ativos mais arriscados) ou aversão ao risco (investidores buscando segurança em títulos e dólar). Dê uma frase explicando o porquê. Termine com uma frase de transição resumindo o contexto macro antes de avançar.
+
+SEÇÃO 2 — DESTAQUE DO DIA (~200 palavras)
+Identifique o único desenvolvimento mais relevante para o mercado nos dados de hoje. Comece pelo impacto no posicionamento dos investidores, não apenas pelo que aconteceu. Use uma analogia se ajudar, extraída da história financeira ou de precedentes de política monetária — não comparações com produtos do dia a dia. Termine com uma frase conectando essa história ao que vem a seguir no boletim.
+
+SEÇÃO 3 — PANORAMA DAS AÇÕES (~300 palavras)
+Comente 4 a 5 nomes entre as carteiras monitoradas. Para cada um: o que aconteceu, por quê, e o que isso sinaliza sobre o setor ou o tema macro mais amplo. Inclua as variações percentuais. Conecte cada movimento além da ação individual — se a ASML subiu, relacione aos ciclos de capex em IA; se uma ação brasileira se moveu, conecte à demanda por commodities ou à China. Termine com uma frase identificando o tema dominante entre os nomes comentados.
+
+SEÇÃO 4 — APROFUNDAMENTO MACRO (~200 palavras)
+Escolha a história macro mais importante nos dados de hoje — movimento de commodity, sinal de juros, divergência geográfica — e vá além do título. Aborde: o que o movimento implica sobre o que os investidores esperam atualmente, e o que mudaria esse quadro. Termine com uma frase sobre como essa história macro se conecta de volta às ações.
+
+SEÇÃO 5 — CONECTANDO OS PONTOS (~150 palavras)
+Sintetize em 2 temas de múltiplos mercados. Use linguagem conectiva: "o fio condutor aqui é...", "o que o mercado está sinalizando é...". Note divergências incomuns e o que elas historicamente indicam. Termine com uma frase que enquadre o caráter geral da sessão de hoje.
+
+SEÇÃO 6 — A VISÃO DO ANALISTA (~150 palavras)
+Estruture em quatro partes:
+(a) Sua tese direcional para a próxima sessão ou semana, dita claramente.
+(b) Um dado de apoio ou paralelo histórico com números.
+(c) O que especificamente invalidaria essa visão.
+(d) Uma implicação prática: o que um gestor faria com essa informação.
+Tom: confiante, específico e honesto sobre a incerteza. Defenda uma visão.
+
+SEÇÃO 7 — O QUE ACOMPANHAR (~80 palavras)
+Feche com 2 catalisadores específicos nas próximas 24 a 48 horas. Nomeie eventos reais. Diga qual resultado seria positivo (bom para os mercados) ou negativo (ruim para os mercados) e por quê.
+
+---
+
+REGRAS DE ESTILO:
+- Escreva em parágrafos falados corridos. Sem listas, sem marcadores, sem cabeçalhos no texto de saída — este boletim é lido em voz alta.
+- Todo termo financeiro deve ser explicado em linguagem simples na mesma frase em que aparece pela primeira vez. NÃO use estas expressões sem explicação imediata:
+  "correlação negativa entre ações e títulos" → diga "títulos subindo enquanto ações caem — o movimento clássico de proteção"
+  "prêmio de risco geopolítico" → diga "a cautela extra que os investidores embutem nos preços quando as tensões políticas aumentam"
+  "índices amplos de ações" → diga "os principais benchmarks do mercado, como o S&P 500"
+  "o USO recuou" → diga "o petróleo devolveu [X]% dos ganhos do dia"
+  "short squeeze" → diga "investidores que apostaram na queda sendo forçados a reverter suas posições rapidamente"
+  "reprecificação fundamentalista" → diga "o mercado reavaliando o quanto uma empresa realmente vale"
+- Quando couber naturalmente, use o raciocínio de Peter Lynch de 'One Up on Wall Street': essa empresa tem uma história simples de entender? Esse movimento é típico de uma empresa de crescimento rápido, estável, cíclica ou em virada? Helena consegue ver os produtos ou clientes desta empresa no cotidiano? Aplique apenas quando encaixar de forma natural — não force.
+- Termine cada seção com uma frase de transição resumindo o principal ponto antes de avançar. Mantenha breve e natural para o áudio falado.
+- Analogias devem vir da história financeira ou de precedentes de política monetária — não de produtos do dia a dia.
+- Inclua números reais ao longo do texto: níveis de índices, variações percentuais, níveis de juros, variações de preço.
+- Tom confiante, direto e profissional — como um analista experiente conversando com um estagiário motivado.
+- Sem frases de enchimento: sem "vamos explorar", "aqui está a surpresa", "boa pergunta" ou "fascinante".
+- Não use listas ou marcadores em nenhum ponto do texto de saída."""
 
     async with anthropic_client.messages.stream(
         model="claude-opus-4-6",
@@ -671,14 +685,14 @@ STYLE RULES:
         pass  # cover art is best-effort — audio still returns if DALL-E fails
 
     # Convert narrative to speech — chunked to handle OpenAI's 4096-char-per-request limit
-    intro = f"Helena's Daily Market Briefing — {date.today().strftime('%B %d, %Y')}.\n\n"
+    intro = f"Helena Alpha Engine — Boletim Diário de Mercado — {date.today().strftime('%d de %B de %Y')}.\n\n"
     full_text = intro + narrative
     tts_chunks = _chunk_text_for_tts(full_text)
     audio_parts = []
     for chunk in tts_chunks:
         chunk_response = await openai_client.audio.speech.create(
-            model="tts-1",
-            voice="alloy",
+            model="tts-1-hd",
+            voice="nova",
             input=chunk,
         )
         audio_parts.append(chunk_response.content)
