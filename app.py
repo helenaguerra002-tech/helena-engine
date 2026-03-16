@@ -692,7 +692,7 @@ REGRAS DE ESTILO:
     for chunk in tts_chunks:
         chunk_response = await openai_client.audio.speech.create(
             model="tts-1-hd",
-            voice="nova",
+            voice="onyx",
             input=chunk,
         )
         audio_parts.append(chunk_response.content)
