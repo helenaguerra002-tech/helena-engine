@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 from fastapi import FastAPI, Query, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, ID3NoHeaderError
 import anthropic
 import openai
@@ -762,6 +762,12 @@ async def podcast_trigger_daily():
     Called by the daily scheduler — generates the podcast and pushes it to Telegram.
     Requires TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars on Render.
     """
-    audio_bytes, episode_title = await _run_daily_podcast()
-    telegram_ok = await _send_to_telegram(audio_bytes, episode_title)
-    return {"status": "ok", "title": episode_title, "telegram_sent": telegram_ok}
+    import traceback
+    try:
+        audio_bytes, episode_title = await _run_daily_podcast()
+        telegram_ok = await _send_to_telegram(audio_bytes, episode_title)
+        return {"status": "ok", "title": episode_title, "telegram_sent": telegram_ok}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e), "traceback": traceback.format_exc()})
