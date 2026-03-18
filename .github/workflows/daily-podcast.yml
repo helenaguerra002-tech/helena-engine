@@ -2,8 +2,7 @@ name: Daily Podcast
 
 on:
   schedule:
-    - cron: '45 8 * * 1-5'  # GMT (Oct–Mar): 8:45 AM UTC → arrives ~9 AM London
-    - cron: '45 7 * * 1-5'  # BST (Mar–Oct): 7:45 AM UTC → arrives ~9 AM London
+    - cron: '0 8 * * 1-5'   # 8 AM UTC = 9 AM BST (Mar–Oct) / 8 AM GMT (Oct–Mar)
   workflow_dispatch:         # allows manual trigger from GitHub UI
 
 jobs:
