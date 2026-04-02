@@ -1,4 +1,4 @@
-# Helena Alpha Engine
+# Alpha Engine
 
 A fully automated daily market briefing system. Every morning it pulls live market data, 
 structures it as a sell-side research briefing, narrates it with AI, and delivers it as 
