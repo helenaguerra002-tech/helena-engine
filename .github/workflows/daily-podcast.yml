@@ -5,12 +5,47 @@ on:
     - cron: '0 8 * * 1-5'   # 8 AM UTC = 9 AM BST (Mar–Oct) / 8 AM GMT (Oct–Mar)
   workflow_dispatch:         # allows manual trigger from GitHub UI
 
+# The heartbeat step commits to the repo so GitHub never auto-disables this
+# schedule for 60 days of repo inactivity (which is what silently stopped the
+# podcast on 10 June 2026).
+permissions:
+  contents: write
+
 jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout (needed for the heartbeat commit)
+        uses: actions/checkout@v4
+
+      - name: Warm up Render (free tier cold start ~50s)
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 90 https://helena-alpha-engine.onrender.com/health || true)
+            echo "health attempt $i -> $code"
+            [ "$code" = "200" ] && break
+            sleep 15
+          done
+
       - name: Trigger daily podcast
+        id: podcast
         run: |
           response=$(curl -s -X POST https://helena-alpha-engine.onrender.com/podcast/trigger-daily -m 600)
           echo "$response"
-          echo "$response" | grep -q '"telegram_sent":true' && echo "SUCCESS: podcast sent to Telegram" || echo "WARNING: podcast generated but Telegram delivery failed"
+          if echo "$response" | grep -q '"telegram_sent":true'; then
+            echo "SUCCESS: podcast sent to Telegram"
+            echo "result=sent" >> "$GITHUB_OUTPUT"
+          else
+            echo "WARNING: podcast generated but Telegram delivery failed"
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Heartbeat commit (keeps the schedule alive)
+        run: |
+          mkdir -p data
+          printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ steps.podcast.outputs.result }}" > data/last_run.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/last_run.txt
+          git commit -m "chore: daily podcast heartbeat" || echo "nothing to commit"
+          git push
