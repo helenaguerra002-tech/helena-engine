@@ -120,7 +120,18 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "helena-alpha-engine"}
+    # Booleans only. Never return or log the values themselves.
+    return {
+        "status": "ok",
+        "service": "helena-alpha-engine",
+        "configured": {
+            "finnhub": bool(FINNHUB_API_KEY),
+            "anthropic": bool(ANTHROPIC_API_KEY),
+            "openai": bool(OPENAI_API_KEY),
+            "telegram_bot_token": bool(TELEGRAM_BOT_TOKEN),
+            "telegram_chat_id": bool(TELEGRAM_CHAT_ID),
+        },
+    }
 
 
 @app.get("/watchlist/brief")
@@ -748,36 +759,61 @@ STYLE RULES:
     return audio_bytes, episode_title
 
 
-async def _send_to_telegram(audio_bytes: bytes, title: str) -> bool:
-    """Send the daily podcast MP3 to Telegram. Returns True on success."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return False
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
-    async with httpx.AsyncClient(timeout=120) as client:
-        r = await client.post(
-            url,
-            data={"chat_id": TELEGRAM_CHAT_ID, "title": title, "performer": "Helena Alpha Engine"},
-            files={"audio": ("briefing.mp3", audio_bytes, "audio/mpeg")},
+def _missing_telegram_env() -> str:
+    missing = [
+        name
+        for name, value in (
+            ("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
+            ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID),
         )
-    return r.status_code == 200
+        if not value
+    ]
+    return ", ".join(missing)
 
 
-async def _send_text_to_telegram(text: str, title: str) -> bool:
+async def _send_to_telegram(audio_bytes: bytes, title: str) -> tuple[bool, str]:
+    """Send the daily podcast MP3 to Telegram.
+
+    Returns (ok, reason). A bare False told us nothing when delivery started
+    failing, so the reason is now carried out. Telegram error bodies are safe
+    to surface: the bot token travels in the URL, never in the response.
+    """
+    missing = _missing_telegram_env()
+    if missing:
+        return False, f"missing env var: {missing}"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
+    size_mb = len(audio_bytes) / 1_000_000
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(
+                url,
+                data={"chat_id": TELEGRAM_CHAT_ID, "title": title, "performer": "Helena Alpha Engine"},
+                files={"audio": ("briefing.mp3", audio_bytes, "audio/mpeg")},
+            )
+    except Exception as e:
+        return False, f"{type(e).__name__} sending {size_mb:.1f} MB"
+    if r.status_code == 200:
+        return True, ""
+    return False, f"telegram {r.status_code}: {r.text[:200]} ({size_mb:.1f} MB)"
+
+
+async def _send_text_to_telegram(text: str, title: str) -> tuple[bool, str]:
     """Send the briefing as plain text when the audio could not be produced.
 
     Mirrors the portfolio-catalyst-tracker fallback: a text briefing that
     arrives beats a podcast that does not. Returns True if every part sent.
     """
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return False
+    missing = _missing_telegram_env()
+    if missing:
+        return False, f"missing env var: {missing}"
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     parts = _chunk_text_for_tts(text, max_chars=3800)  # Telegram caps at 4096
-    ok = bool(parts)
     async with httpx.AsyncClient(timeout=120) as client:
         for part in parts:
             r = await client.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": part})
-            ok = ok and r.status_code == 200
-    return ok
+            if r.status_code != 200:
+                return False, f"telegram {r.status_code}: {r.text[:200]}"
+    return bool(parts), ""
 
 
 @app.get("/watchlist/podcast/daily")
@@ -803,17 +839,23 @@ async def podcast_trigger_daily():
     import traceback
     try:
         audio_bytes, episode_title = await _run_daily_podcast()
-        telegram_ok = await _send_to_telegram(audio_bytes, episode_title)
-        return {"status": "ok", "title": episode_title, "telegram_sent": telegram_ok}
+        telegram_ok, why = await _send_to_telegram(audio_bytes, episode_title)
+        result = {"status": "ok", "title": episode_title, "telegram_sent": telegram_ok}
+        if not telegram_ok:
+            result["telegram_error"] = why
+        return result
     except TTSUnavailable as e:
         body = f"{e.title}\n\n(Audio unavailable today: {e.reason}. Text version below.)\n\n{e.narrative}"
-        telegram_ok = await _send_text_to_telegram(body, e.title)
-        return {
+        telegram_ok, why = await _send_text_to_telegram(body, e.title)
+        result = {
             "status": "degraded",
             "title": e.title,
             "telegram_sent": telegram_ok,
             "audio_error": e.reason,
         }
+        if not telegram_ok:
+            result["telegram_error"] = why
+        return result
     except HTTPException:
         raise
     except Exception as e:
