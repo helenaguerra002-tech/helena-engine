@@ -33,14 +33,22 @@ jobs:
           response=$(curl -s -X POST https://helena-alpha-engine.onrender.com/podcast/trigger-daily -m 600)
           echo "$response"
           if echo "$response" | grep -q '"telegram_sent":true'; then
-            echo "SUCCESS: podcast sent to Telegram"
-            echo "result=sent" >> "$GITHUB_OUTPUT"
+            if echo "$response" | grep -q '"status":"degraded"'; then
+              echo "PARTIAL: text briefing sent, audio failed"
+              echo "result=text-only" >> "$GITHUB_OUTPUT"
+            else
+              echo "SUCCESS: podcast sent to Telegram"
+              echo "result=sent" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "WARNING: podcast generated but Telegram delivery failed"
+            echo "FAILURE: nothing reached Telegram"
             echo "result=failed" >> "$GITHUB_OUTPUT"
           fi
 
+      # Always runs: the commit is what keeps the schedule from being disabled,
+      # so it must happen even on a failed delivery.
       - name: Heartbeat commit (keeps the schedule alive)
+        if: always()
         run: |
           mkdir -p data
           printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ steps.podcast.outputs.result }}" > data/last_run.txt
@@ -49,3 +57,12 @@ jobs:
           git add data/last_run.txt
           git commit -m "chore: daily podcast heartbeat [skip render]" || echo "nothing to commit"
           git push
+
+      # Runs last so the heartbeat is already committed. Without this the job
+      # went green even when nothing was delivered, which is how the podcast
+      # stayed broken unnoticed.
+      - name: Fail the run if nothing was delivered
+        if: always() && steps.podcast.outputs.result == 'failed'
+        run: |
+          echo "::error::Telegram delivery failed. Check OPENAI_API_KEY on the Render service."
+          exit 1
